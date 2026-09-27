@@ -1,218 +1,195 @@
-# ICML SAIL with Ralph
+<h1 align="center">ICML SAIL with Ralph</h1>
 
-Frontend for **ICML SAIL with Ralph** — an AC(Area Chair)-style paper-review
-agent. Submit a paper, get a 0–100 selection score from the 3-head model,
-receive an AC-style review when the score falls short of the award-similar
-band, revise with one click, and loop until **SELECTED**.
+<p align="center">
+  <img src="https://img.shields.io/badge/React%2018%20%C2%B7%20TypeScript%206%20%C2%B7%20Vite%208-C15F3C?style=flat" alt="React 18, TypeScript 6, Vite 8" />
+  <img src="https://img.shields.io/badge/Tailwind%203%20%C2%B7%20Recoil%20%C2%B7%20TanStack%20Query-C15F3C?style=flat" alt="Tailwind 3, Recoil, TanStack Query" />
+  <img src="https://img.shields.io/badge/adapter-FastAPI%20%C2%B7%20Python%203.12-4493F8?style=flat" alt="FastAPI adapter on Python 3.12" />
+  <img src="https://img.shields.io/badge/heads-Claude%20reviewers%20%2B%20VESSL%20Qwen3--8B%20LoRA-4493F8?style=flat" alt="Claude reviewer heads and a VESSL Qwen3-8B LoRA meta-review head" />
+</p>
 
-The UI is a pixel-faithful web port of the MIT-licensed
-[Open Science Desktop](https://github.com/ai4s-research/open-science)
-(design tokens, layout constants, interaction patterns) — see
-`LICENSES/open-science-MIT.txt`.
+<p align="center">
+  <sub><a href="docs/readme/README.ko.md">한국어</a></sub>
+</p>
+
+<p align="center">
+  <strong>An Area-Chair-style review loop for your paper, run the way ICML runs it.</strong><br/>
+  Submit a manuscript, get three reviewer reviews with no score attached, argue back in a rebuttal thread,<br/>
+  accept or reject AI-drafted revision hunks, and only at <em>finalize</em> receive the AC meta-review, a 0–100<br/>
+  selectivity score and an accept/reject decision. Resubmit and the next cycle starts fresh.
+</p>
+
+<h3 align="center"><a href="#getting-started"><ins>Getting started</ins></a> · <a href="sail-spec/00-INDEX.md">Rebuild spec</a> · <a href="sail-spec/assets/review-agent.md">Frozen review agent</a></h3>
+
+## Features
+
+### Reviews first, score last
+
+A cycle mirrors a real venue: `submit` produces three reviewer reviews (ICML 1–10 rating, summary, and in live mode a full-length body plus confidence, soundness, presentation and contribution). No score exists yet. The score, `gradeTier`, feature attributions and the deficiency report appear only after `finalize`, together with the AC meta-review and the decision post. `SELECT_THRESHOLD` is 88.
+
+### A rebuttal thread, not a chat log
+
+Comments are structured issues (`major` / `minor` / `question`, with a section label and the reviewer who raised them). Replying to a comment sends the author's message back to that reviewer, who follows up. Every allow/deny decision on a revision hunk is logged into the thread as rebuttal text, so the AC sees the whole discussion.
+
+### Hunk-level AI revision
+
+`revision-draft` asks the agent for before/after hunks, each with a rationale and the comment ids it addresses. You approve or deny hunk by hunk; `revision-apply` rewrites the manuscript with the allowed ones and attaches the revised draft to your next message. The manuscript pane highlights what changed. Direct manuscript edits are supported too.
+
+### Analysis view grounded in a real corpus
+
+`/review/:id/analysis` draws the score bottleneck (backbone activations → score → three heads) and places your paper's cycle scores on a histogram of **47,209 real ICLR/ICML/NeurIPS/UAI submissions (2018–2026)** with measured tier medians: reject 25, poster 43, spotlight 59, oral 71.8, notable-top-5% 86.7. Hovering an attribution row highlights the manuscript sentences behind it.
+
+### Works with or without a backend
+
+Leave `VITE_RALPH_API_URL` unset and the built-in mock runs the entire loop deterministically (cycle scores 63 → 79 → 91 → 96), streaming step events and persisting every paper, including uploaded PDF blobs, to IndexedDB (`sail-ralph`). Set it and every call maps 1:1 onto `serve/sail_adapter.py`.
+
+**Also included**
+
+- **`serve/sail_adapter.py`**: the single-file FastAPI backend (contract v2). With `ANTHROPIC_API_KEY` it runs three parallel Claude reviewer agents, a reviewer-reply agent, a VESSL-served Qwen3-8B LoRA meta-review and score head, a Claude attribution head and a Claude revision agent; without it every head degrades to a deterministic fallback. It also exposes `POST /api/score` as a thin proxy to the trained score head.
+- **`sail-spec/`**: a self-contained rebuild specification: verbatim source units for every front-end module, the backend contract, GCE and VESSL runbooks, the GPU training plan, golden transcripts from a live run, and the hackathon Track 2 protocol.
+- **Terminal review skill**: `sail-spec/assets/review_paper.py` runs one paper through the same backend path as the web app and renders the official Track 2 review template; `agent_review_submit.py` is the Track 1 submission harness for the openagentreview.org review window.
+- **Paper-tone light and dark themes**, `⌘B` sidebar collapse, and a sidebar history of every submission with status dots.
 
 ---
 
-## Stack
+## How it works
 
-| Layer | Choice |
-|---|---|
-| Framework | React 18 + TypeScript + Vite |
-| Styling | Tailwind CSS — paper-tone light/dark themes, alpha-capable `color-mix` tokens |
-| UI state | **Recoil** (sidebar/inspector widths, theme, manuscript highlight) |
-| Server state | **TanStack Query** (papers, versions, scores, reviews) |
-| Routing | react-router-dom |
-| Icons / primitives | lucide-react, Radix UI |
-| Local persistence | **IndexedDB** (mock mode) |
+```text
+Browser (Vite + React 18, Recoil UI state, TanStack Query server state)
+   │  src/api/reviewLoop.ts — the single type contract
+   ├── VITE_RALPH_API_URL unset ──▶ mock loop in the same file ──▶ IndexedDB (papers + PDF blobs)
+   └── VITE_RALPH_API_URL set ────▶ serve/sail_adapter.py (FastAPI, :8100 locally)
+                                       ├─ review head ........ 3 parallel Claude reviewers
+                                       ├─ reply head ......... Claude, grounded in that reviewer's review + thread
+                                       ├─ meta-review+score .. VESSL Qwen3-8B LoRA  (/meta-review, /score)
+                                       ├─ attribution head ... Claude, verbatim evidence sentences
+                                       ├─ revision agent ..... Claude, grounded hunks only
+                                       └─ state ............. SAIL_STATE_PATH (sail_state.json)
+```
 
-## Run
+1. **Submit** (`POST /api/loop/papers`, multipart `title` + `text` or PDF `file`). PDFs are text-extracted server-side (PyMuPDF). Cycle 1 opens with three reviews; the UI streams the agent's step events from `/api/loop/jobs/{id}`.
+2. **Discuss.** `reply` adds an author message (optionally targeted at a comment) and gets reviewer follow-ups. `revision-draft` / `revision-apply` produce and apply hunks; `manuscript` accepts direct edits.
+3. **Finalize.** The AC meta-review is written from the reviews plus the whole discussion. Score = calibrated `p_accept` (p^0.25, anchored to visible ratings) or, when `SAIL_SCORE_HEAD=1`, the trained regression head. Decision, tier, attributions and a deficiency report ("why the score stopped here, path to the next band") come back together.
+4. **Resubmit** starts cycle N+1 on the revised manuscript with fresh reviews and an empty thread. Status moves between `in_discussion` and `decided`.
+
+<details>
+<summary><strong>Adapter environment</strong></summary>
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | unset | Turns on the live heads (`LIVE=True`). Without it all heads use deterministic fallbacks. |
+| `SAIL_CLAUDE_MODEL` | `claude-opus-4-8` | Model for reviewer, reply, attribution and revision agents. |
+| `VESSL_META_URL`, `VESSL_META_MODEL` | VESSL endpoint, `v2` | Meta-review and score serving. |
+| `SAIL_SCORE_HEAD` | `1` | `0` reverts to the original `p_accept` calibration path. |
+| `SAIL_VENUE` | `icml` | Reviewer bar: `icml` (main conference) or `workshop` (4-page events; marked unvalidated). |
+| `SAIL_FIELD_CONTEXT`, `TOPIC_MATURITY_PATH` | `1`, `/opt/sail/topic_maturity.json` | Recency correction from `build_topic_maturity.py`. |
+| `SAIL_STATE_PATH` | `sail_state.json` | Persistent loop state. |
+| `WEB_DIST` | `/opt/sail/web` | Built SPA served by the same process in deployment. |
+
+</details>
+
+---
+
+## Tech stack
+
+<p>
+  <kbd>React&nbsp;18</kbd> &nbsp; <kbd>TypeScript&nbsp;6</kbd> &nbsp; <kbd>Vite&nbsp;8</kbd> &nbsp; <kbd>Tailwind&nbsp;3</kbd> &nbsp; <kbd>Recoil</kbd> &nbsp; <kbd>TanStack&nbsp;Query&nbsp;5</kbd> &nbsp; <kbd>react-router&nbsp;7</kbd> &nbsp; <kbd>Radix&nbsp;UI</kbd> &nbsp; <kbd>react-markdown</kbd> &nbsp; <kbd>IndexedDB</kbd> &nbsp; <kbd>oxlint</kbd> &nbsp;
+  <kbd>FastAPI</kbd> &nbsp; <kbd>Python&nbsp;3.12</kbd> &nbsp; <kbd>PyMuPDF</kbd> &nbsp; <kbd>Anthropic&nbsp;SDK</kbd> &nbsp; <kbd>VESSL&nbsp;serving</kbd> &nbsp; <kbd>GCE&nbsp;+&nbsp;GCS</kbd>
+</p>
+
+---
+
+## Getting started
+
+**Prerequisites**
+
+- Node.js 20+ and npm for the web app.
+- Python 3.10+ (the Dockerfile uses 3.12) for the adapter; an Anthropic API key and a reachable VESSL endpoint for live mode.
 
 ```bash
+git clone https://github.com/yc9954/Ralphthon-ICML-SAIL.git
+cd Ralphthon-ICML-SAIL
 npm install
-npm run dev        # http://localhost:5199 — standalone on the built-in mock
+npm run dev                 # http://localhost:5199 — mock mode, no backend needed
 ```
 
-Connect the real agent API later with one env var (the mock is bypassed):
+To connect the adapter instead of the mock:
 
 ```bash
-echo 'VITE_RALPH_API_URL=http://localhost:8100' > .env.local   # 8000은 로컬 Sophy와 충돌
+# backend
+cd serve && pip install -r requirements.txt
+ANTHROPIC_API_KEY=... uvicorn sail_adapter:app --port 8100     # omit the key for fallback heads
+
+# frontend
+echo 'VITE_RALPH_API_URL=http://localhost:8100' > .env.local   # 8000 is avoided: it collides with a local Sophy
+npm run dev
 ```
 
-### 실 어댑터 연결 메모 (2026-07-11, 백엔드 어댑터 v1 기준)
+| Process | Port | Notes |
+| --- | --- | --- |
+| Vite dev server | `5199` | set in `vite.config.ts` |
+| `sail_adapter.py` (uvicorn) | `8100` locally, `8080` in the Docker image | `PORT` env in the container |
 
-- GCP 배포본: `http://8.230.3.211:8100` (GCE `sail-adapter` VM, `sweetspot-ax` /
-  asia-northeast3-a, systemd `sail-adapter.service`, 상태 `/opt/sail/sail_state.json`).
-  `VITE_RALPH_API_URL=http://8.230.3.211:8100` 로 바로 연결 가능.
-- 어댑터: `icml-ac/serve/sail_adapter.py` (로컬 :8100) — 5개 엔드포인트 계약 전부 구현,
-  CORS 허용, `sail_state.json` 영속. **실 파이프라인 연결 완료**: Claude 리뷰어 3인 병렬
-  (few-shot 스킬, 미서빙 헤드 대체) → VESSL v2 LoRA 메타리뷰+p_accept
-  (`/meta-review`, 반론 히스토리는 `discussion`으로 전달) → 점수 = p_accept×100에
-  양극단 완화 캘리브레이션(p^0.25) → Claude attribution 헤드(원문 verbatim 근거) →
-  Claude revise 에이전트(원고 실제 재작성). 헤드별 독립 폴백(결정적 시뮬레이션).
-- SELECT 규칙: 점수 ≥ 88 **그리고** 리뷰 턴 ≥ 5 (메타리뷰 없이 선정하지 않음).
-  SELECTED 이후에도 리뷰·수정 루프는 계속 (베스트페이퍼 밴드까지 피드백 지속).
-- 제출 지연 ~20-40초, AI 수정 ~2-3분 (scoring 상태로 커버).
-- **PDF 제출은 서버에서 텍스트 추출되어 `manuscript.kind: "text"`로 반환** (계약 상세는
-  `src/api/reviewLoop.ts` 모듈 헤더가 단일 기준) — PDF embed가 필요해지면 PDF 서빙
-  엔드포인트(GET .../versions/:v/pdf 등) 계약을 정해서 알려주세요.
-- `score.attributions`는 v1에선 근사(코멘트 키워드→원고 문장 매칭), `layers`는 점수 연동
-  근사값. 점수 캘리브레이션(양극단 완화)은 백엔드 후속 작업.
+**Terminal review of one paper** (same pipeline as the web app, official Track 2 template):
+
+```bash
+python3 sail-spec/assets/review_paper.py papers/foo.md --base http://localhost:8100 [--selfreview papers/foo.selfreview.md] [--keep]
+```
+
+---
+
+## Building and testing
+
+```bash
+npm run build     # tsc -b && vite build → dist/
+npm run lint      # oxlint
+npm run preview
+```
+
+There is no automated test suite. The acceptance gates are manual checklists: `sail-spec/golden/flows.md` §A (mock flow, eight items) and §B (adapter fallback end-to-end), with the JSON files in `sail-spec/golden/` as live transcripts whose fields and invariants, not values, are the reference.
+
+---
+
+## Screens
+
+| Route | What it does |
+| --- | --- |
+| `/review` | Submit a title plus pasted text or a PDF; lists previous submissions. |
+| `/review/:paperId` | The loop: reviews, rebuttal thread with per-comment replies, revision hunks, finalize and resubmit, with the manuscript pane on the right (serif text render or PDF embed, 360–960 px resizable, change highlights). |
+| `/review/:paperId/analysis` | Bottleneck diagram and the real-corpus distribution with your paper's cycle trajectory. |
+| `/settings` | Privacy and data-flow card; remote compute and Modal cards (desktop-app placeholders). |
 
 ---
 
 ## Repository structure
 
-```
-src/
-├── main.tsx                      RecoilRoot + QueryClient + Router + Theme
-├── index.css                     design tokens (light/dark CSS variables)
-├── data/
-│   └── corpusDistribution.ts     REAL corpus histogram — 47,209 submissions
-├── api/
-│   ├── reviewLoop.ts             ★ domain contract + mock simulation
-│   ├── reviewLoopQueries.ts      TanStack Query hooks (useLoopPaper, …)
-│   └── loopStorage.ts            IndexedDB persistence (mock mode)
-├── app/
-│   ├── router.tsx                /review · /review/:id · /review/:id/analysis · /settings
-│   ├── layout/AppShell.tsx       sidebar + outlet shell (⌘B collapse)
-│   ├── providers/ThemeProvider.tsx
-│   └── routes/
-│       ├── ReviewLoopPage.tsx    ★ submit view + loop view (score/review/actions)
-│       ├── AnalysisPage.tsx      ★ bottleneck viz + corpus distribution
-│       ├── SettingsPage.tsx
-│       └── NotFound.tsx
-├── components/
-│   ├── review/ManuscriptPane.tsx 우측 원고 패널 (text serif 렌더 / PDF embed, 하이라이트)
-│   ├── analysis/
-│   │   ├── BottleneckDiagram.tsx 백본 12블록 → 점수 병목 → 3-헤드 SVG
-│   │   ├── CorpusDistribution.tsx 실코퍼스 히스토그램 + 내 논문 여정
-│   │   └── ReviewTabs.tsx        Review | Analysis 탭
-│   ├── sidebar/                  브랜드 락업 + New review + REVIEWS 히스토리
-│   ├── settings/                 설정 카드
-│   └── ui/                       Toaster, ConfirmDialog
-└── lib/                          cn, Recoil store, platform shim, toast bus
-```
-
-## Features
-
-1. **제출** (`/review`) — 제목 + 원고(**텍스트 붙여넣기 또는 PDF 업로드**, 둘 다 가능).
-   모델 입력은 본문 텍스트이므로 PDF는 백엔드에서 텍스트 추출.
-2. **채점** — 3-헤드 모델의 선택도 점수 **0–100** (100 = 만점). 점수 바에
-   select 임계선(≥ 88, 수상작-유사 밴드) 표시.
-3. **SELECT 판정** — 임계값 도달 시 SELECTED 배너 표시. 단 **루프는 종료되지
-   않음**: 선정/베스트페이퍼 밴드에서도 리뷰·코멘트가 계속 생성되고 AI 수정을
-   계속 돌릴 수 있음 (SELECTED는 상태이지 종착점이 아님).
-4. **AC 리뷰** — 미달 시 버전당 6–7건의 이슈형 코멘트(major/minor/question,
-   섹션 라벨). 다음 버전이 해소하면 `resolved in v(n+1)` 취소선 처리.
-5. **AI 수정 루프** — "Revise with AI" 클릭 → 에이전트가 열린 리뷰를 반영해
-   v(n+1) 생성 → 자동 재채점 → 반복. 버전 레일(v1 64 → v2 78 → v3 91✓)로
-   전체 여정 탐색.
-6. **원고 패널** — 각 버전이 채점 당시의 원고 스냅샷 보유. 텍스트는 세리프
-   조판(마크다운 헤딩 지원). PDF 인라인 embed + "Open in new tab"은 PDF URL이
-   있을 때(mock 또는 향후 PDF 서빙 엔드포인트) — 실 어댑터 v1은 추출 텍스트로
-   표시. 360–960px 드래그 리사이즈.
-7. **근거 하이라이트** — 기여도(feature attribution) 행 호버 → 그 피처를
-   유발한 원고 문장이 패널에서 하이라이트 + 자동 스크롤 (S6 설명가능성의 UI).
-8. **Analysis 탭** — ① 점수 병목 시각화: 백본 12블록 활성 → 8번 블록의
-   softmax 병목(점수) → 3-헤드(리뷰/종합/판정) SVG 다이어그램. ② 실코퍼스
-   분포: **실제 47,209편**의 선택도 히스토그램(√스케일) 위에 실측 티어
-   중앙값(reject 25 / poster 43 / spotlight 59 / oral 71.8 / top-5% 86.7),
-   select 밴드, 내 논문의 버전별 이동 경로.
-9. **사이드바 REVIEWS** — 축적된 제출 히스토리(상태 점 + 점수). 라이트/다크
-   테마, ⌘B 사이드바 접기.
+| Path | What lives there |
+| --- | --- |
+| `src/api/reviewLoop.ts` | The domain contract (types, `SELECT_THRESHOLD`, `loopApi`) and the deterministic mock. |
+| `src/api/reviewLoopQueries.ts`, `loopStorage.ts` | TanStack Query hooks; IndexedDB persistence for mock mode. |
+| `src/app/` | `router.tsx`, `layout/AppShell.tsx`, `providers/ThemeProvider.tsx`, `routes/` (`ReviewLoopPage`, `AnalysisPage`, `SettingsPage`, `NotFound`). |
+| `src/components/` | `review/ManuscriptPane`, `analysis/` (`BottleneckDiagram`, `CorpusDistribution`, `ReviewTabs`), `sidebar/`, `settings/`, `ui/`. |
+| `src/data/corpusDistribution.ts` | The 47,209-paper histogram (50 bins) and tier medians. |
+| `serve/` | `sail_adapter.py`, `requirements.txt`, `Dockerfile`. |
+| `sail-spec/` | `00-INDEX.md` (map and ten common principles), `CLAUDE.md` (session entry point), `STATE.md` (living checklist), `GOAL.md` (mission prompts), numbered units for foundation, design tokens, contracts, API, data, state, UI, wiring, backend, ops (GCE, VESSL), training (GPU plan), harness, hackathon Track 2, `golden/` transcripts, `assets/` (`review_paper.py`, `agent_review_submit.py`, `build_topic_maturity.py`, `topic_maturity.json`, `startup.sh`, `review-agent.md`). |
+| `LICENSES/open-science-MIT.txt` | License of the upstream Open Science Desktop UI that this port follows. |
+| `.env.example` | `VITE_RALPH_API_URL`. |
 
 ---
 
-## 데이터 저장 형태
+## Project status
 
-### 1) 도메인 모델 (프론트·백엔드 공용 계약 — `src/api/reviewLoop.ts`)
+**Context.** Built for the Ralphthon ICML hackathon (event kit: `github.com/team-attention/ralphthon-icml`), 11–12 July 2026, by danro, juneyoon and yc9954. Track 2 deliverables are the frozen [`review-agent.md`](sail-spec/assets/review-agent.md) and structured reviews rendered with it; Track 1 submission goes through `agent_review_submit.py`.
 
-리뷰는 채팅형 타임라인이 아니라 **버전에 귀속**됩니다. 논문 1건의 전체 상태:
+**Working today.** The full cycle loop in mock mode with IndexedDB persistence; the same loop against the adapter (fallback heads without a key, live heads with one); PDF and text submission; hunk-level revision; analysis view on real corpus data; the terminal review script, verified on a real paper per the commit log.
 
-```jsonc
-{
-  "id": "lp_1",
-  "title": "…",
-  "status": "in_review",            // scoring | in_review | selected
-  "currentVersion": 2,
-  "versions": [
-    {
-      "version": 1,
-      "origin": "upload",            // upload | ai_revision
-      "changeNote": "…",             // ai_revision일 때: 무엇을 고쳤는지
-      "manuscript": {                // ★ 이 버전이 채점된 원고 스냅샷
-        "kind": "text" | "pdf",
-        "text": "…",                 // text: 전문 / pdf: 누적 수정 노트
-        "fileName": "paper.pdf",     // pdf 전용
-        "url": "blob:…"              // pdf 전용 (로드 시 재발급)
-      },
-      "score": {
-        "score": 64,                 // 0–100
-        "selectThreshold": 88,
-        "gradeTier": "poster",       // reject|poster|spotlight|oral|notable-top-5%
-        "attributions": [            // S6: 점수를 움직인 피처 + 근거 문장
-          { "feature": "ablation completeness", "weight": -0.31,
-            "evidence": ["원고의 실제 문장…"] }
-        ],
-        "layers": [0.28, …]          // 백본 12블록 활성 (병목 시각화용)
-      },
-      "reviews": [                   // S1 리뷰 헤드: 병렬 리뷰어 3인의 리뷰
-        { "id": "lp_1_v1_r0", "reviewer": "Reviewer 1",
-          "rating": 5, "summary": "…" }
-      ],
-      "metaReview": "…",             // S3 메타리뷰 헤드: 리뷰·반론 히스토리 종합 (v5부터)
-      "comments": [                  // ★ 메타리뷰에서 추출한 구조화 코멘트 (select면 [])
-        { "id": "lp_1_v1_c0", "version": 1,
-          "severity": "major",       // major | minor | question
-          "section": "Method",
-          "body": "…",
-          "resolvedInVersion": 2 }   // 해소는 삭제가 아니라 마킹 → 히스토리 보존
-      ]
-    }
-  ]
-}
-```
+**Depends on infrastructure you may not have.** Live mode needs an Anthropic key and the VESSL-served meta-review/score models; the GCE deployment in `sail-spec/ops/80` and the GPU plan in `training/85` assume the team's GCP project, VESSL org and a private `vendor/ac-competition-kit` that is git-ignored. `sail-spec/SECRETS.local.md` is not in the repo. Metrics quoted in `review-agent.md` (e.g. score-head Spearman 0.872 on test_2023) are the team's own measurements; nothing here re-verifies them.
 
-### 2) 로컬 실행 시 물리 저장소 — IndexedDB (`src/api/loopStorage.ts`)
+**Known gaps.** No automated tests. In live mode PDFs are returned as extracted text (`manuscript.kind: "text"`); inline PDF embed only works with a PDF URL (mock). `venue=workshop` is marked unvalidated after an A/B regression. The `.gstack/` folder contains local browse-session files and is not part of the product.
 
-- DB `sail-ralph` / object store `papers` (keyPath `paper.id`).
-- 저장 단위: `{ paper: LoopPaper, pdfBlobs: {버전: Blob} }` — 위 JSON 전체
-  + 업로드된 **PDF 원본 Blob**.
-- 제출/수정 때마다 저장, 앱 시작 시 하이드레이션으로 복원 → **새로고침·재부팅
-  후에도 히스토리 유지**. 사이드바 REVIEWS와 `/review` Submissions 목록이
-  과거 기록 진입점.
-- object URL은 세션 한정이라 저장 시 제거하고 로드 때 Blob에서 재발급.
-- 용량: IndexedDB는 수백 MB급이라 전문·PDF 축적에 충분 (localStorage 5MB
-  한계 때문에 채택하지 않음). 시크릿 모드 등 저장 불가 환경에선 메모리로
-  우아하게 강등.
-
-### 3) 실 API 연결 후 — 백엔드가 저장 소유
-
-`VITE_RALPH_API_URL` 설정 시 IndexedDB를 건너뛰고 아래 계약으로 통신.
-관계형 매핑: `papers`(1) ← `versions`(N, manuscript·score·layers 포함) ←
-`comments`(N, `resolved_in_version` nullable).
-
-| Method | Path | 역할 |
-|---|---|---|
-| POST | `/api/loop/papers` | 제출 (multipart: title, text?/file?) → v1 채점(+미달 시 리뷰) |
-| GET | `/api/loop/papers` | 제출 목록 |
-| GET | `/api/loop/papers/:id` | 루프 전체 상태 (위 JSON) |
-| POST | `/api/loop/papers/:id/revise` | AI 수정 → 새 버전 + 재채점 + 재리뷰 |
-| POST | `/api/loop/papers/:id/versions` | 수동 수정본 업로드 (multipart) |
-
-### 4) 실코퍼스 통계 (`src/data/corpusDistribution.ts`)
-
-Analysis 히스토그램은 목이 아니라 **실데이터**: 학습 코퍼스 `train_pairs.csv`
-(ICLR/ICML/NeurIPS/UAI 2018–2026, 47,209편)의 `selectivity_target × 100`
-분포를 50개 bin으로 구운 상수 + 등급 티어별 실측 중앙값.
+**Credits.** The UI is a pixel-faithful web port of the MIT-licensed [Open Science Desktop](https://github.com/ai4s-research/open-science) (design tokens, layout constants, interaction patterns); see `LICENSES/open-science-MIT.txt`.
 
 ---
 
-## 모의(mock) 동작 규칙
+## License
 
-백엔드 없이도 전체 플로우가 돌도록: 점수 궤적 v1 63 → 69 → 74 → 79 → 84 →
-v6 91(select). 리뷰(리뷰어 3인)와 점수는 매 버전 생성되지만, **메타리뷰는 반론
-히스토리가 필요하므로 리뷰 턴 5회 축적 후(v5부터)** 실제 루프 기록(제기/해소된
-이슈 수, AI 수정 내역, 점수 궤적)을 종합해 생성. 리뷰 코멘트는 라운드별
-템플릿(회차가 갈수록 좁아짐), AI 수정은 원고에 "Revision notes (vN)" 섹션을
-덧붙여 버전 간 차이가 보이게 함. 근거 문장은 제출한 원고에서 피처별 키워드로
-실추출.
+No LICENSE file is committed for this repository's own code, so default copyright applies: all rights reserved. The ported UI remains under the upstream [MIT license](LICENSES/open-science-MIT.txt).
