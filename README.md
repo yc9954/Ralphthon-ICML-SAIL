@@ -1,4 +1,8 @@
-<h1 align="center">ICML SAIL with Ralph</h1>
+<h1 align="center">Rejected Before You Submit</h1>
+
+<p align="center">
+  <strong>A Ralphthon @ ICML submission (Track 2)</strong> · formerly <em>ICML SAIL with Ralph</em>
+</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/React%2018%20%C2%B7%20TypeScript%206%20%C2%B7%20Vite%208-C15F3C?style=flat" alt="React 18, TypeScript 6, Vite 8" />
