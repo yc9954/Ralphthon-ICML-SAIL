@@ -8,10 +8,6 @@
 </p>
 
 <p align="center">
-  <sub><a href="docs/readme/README.ko.md">한국어</a></sub>
-</p>
-
-<p align="center">
   <strong>An Area-Chair-style review loop for your paper, run the way ICML runs it.</strong><br/>
   Submit a manuscript, get three reviewer reviews with no score attached, argue back in a rebuttal thread,<br/>
   accept or reject AI-drafted revision hunks, and only at <em>finalize</em> receive the AC meta-review, a 0–100<br/>
