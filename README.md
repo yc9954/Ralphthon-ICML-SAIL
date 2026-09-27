@@ -1,4 +1,4 @@
-<h1 align="center">Rejected Before You Submit</h1>
+<h1 align="center">How to Get Rejected Before You Submit</h1>
 
 <p align="center">
   <strong>A Ralphthon @ ICML submission (Track 2)</strong> · formerly <em>ICML SAIL with Ralph</em>
